@@ -1,41 +1,65 @@
-import Init.Data.UInt.Log2
+
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 -- Int8
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
+/-- The size of type `Int8`, that is, `2^8 = 256`. -/
+abbrev Int8.size : Nat := 256
+
 /--
-The type of signed 8-bit two's compliment integers. This type is
-defined to use a UInt8 representation to make it actually 8 bits
-rather than wrapping an `Int`.
+The type of signed 8-bit two's compliment integers.
 -/
 structure Int8 where
-  ofUInt8 ::
-  toUInt8 : UInt8
-  deriving DecidableEq, Inhabited, Hashable
+  val : Fin Int8.size
 
-/-- The size of type `Int8`, that is, `2^8 = 256`. -/
-def Int8.size : Nat := UInt8.size
+-- attribute [extern "lean_int8_of_nat_mk"] Int8.mk
+-- attribute [extern "lean_int8_to_nat"] Int8.val
+
+/--
+Pack a `Nat` less than `2^8` into a `Int8`.
+This function is overridden with a native implementation.
+-/
+-- @[extern "lean_int8_of_nat"]
+def Int8.ofNatCore (n : @& Nat) (h : LT.lt n Int8.size) : Int8 where
+  val := { val := n, isLt := h }
+
+-- set_option bootstrap.genMatcherCode false in
+/--
+Decides equality on `Int8`.
+This function is overridden with a native implementation.
+-/
+-- @[extern "lean_int8_dec_eq"]
+def Int8.decEq (a b : Int8) : Decidable (Eq a b) :=
+  match a, b with
+  | ⟨n⟩, ⟨m⟩ =>
+    dite (Eq n m) (fun h => isTrue (h ▸ rfl)) (fun h => isFalse (fun h' => Int8.noConfusion h' (fun h' => absurd h' h)))
+
+instance : DecidableEq Int8 := Int8.decEq
+
+instance : Inhabited Int8 where
+  default := Int8.ofNatCore 0 (by decide)
+
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
 /-- The max value of type `Int8`, that is, `2^7 - 1 = 127`. -/
-def Int8.maxValue : Int8 := ⟨UInt8.ofNat (UInt8.size / 2 - 1)⟩
+abbrev Int8.maxValue : Int8 := ⟨Fin.ofNat <| Int8.size / 2 - 1⟩
+
 /-- The smallest value of type `Int8`, that is, `-2^7 = -128`. -/
-def Int8.minValue : Int8 := ⟨UInt8.ofNat (UInt8.size / 2)⟩
-/-- Return `a` as an `Int8`. Values outside
-the `Int8` range will wrap around to a corresponding value
-within the range, i.e. `Int8.ofUInt8 <| UInt8.ofNat a`. -/
-def Int8.ofNat (a : Nat) : Int8 := ⟨UInt8.ofNat a⟩
-instance : OfNat Int8 n := ⟨Int8.ofNat n⟩
+abbrev Int8.minValue : Int8 := ⟨Fin.ofNat <| Int8.size / 2⟩
+
+/-- Returns `true` if the Int8 `a` is negative. -/
+def Int8.isNeg (a : Int8) : Bool := a.val > Int8.maxValue.val
+
+-- @[extern "lean_int8_of_nat"]
+def Int8.ofNat (n : @& Nat) : Int8 := ⟨Fin.ofNat n⟩
+instance Int8.instOfNat : OfNat Int8 n := ⟨Int8.ofNat n⟩
+
 /-- Equivalent to `Int8.ofNat`. -/
 abbrev Nat.toInt8 := Int8.ofNat
-/-- Returns `true` if the Int8 `a` is negative. -/
-def Int8.isNeg (a : Int8) : Bool := a.toUInt8 > Int8.maxValue.toUInt8
-/-- Returns the bitwise complement of the two's compliment value `a`. -/
-def Int8.complement (a : Int8) : Int8 := ⟨a.toUInt8.complement⟩
-instance : Complement Int8 := ⟨Int8.complement⟩
-/-- Returns the two's compliment negation of `a`. -/
-def Int8.neg (a : Int8) : Int8 := ⟨0 - a.toUInt8⟩
-instance : Neg Int8 := ⟨Int8.neg⟩
 
+-- @[extern "lean_int8_to_nat"]
 /-- Turns an Int8 into a natural number, negative numbers become
   `0`.
 
@@ -48,7 +72,139 @@ instance : Neg Int8 := ⟨Int8.neg⟩
 def Int8.toNat (a : Int8) : Nat :=
   if a.isNeg
   then 0
-  else a.toUInt8.toNat
+  else a.val.val
+
+-- @[extern "lean_int8_add"]
+def Int8.add (a b : Int8) : Int8 := ⟨a.val + b.val⟩
+instance : Add Int8       := ⟨Int8.add⟩
+
+-- @[extern "lean_int8_sub"]
+def Int8.sub (a b : Int8) : Int8 := ⟨a.val - b.val⟩
+instance : Sub Int8       := ⟨Int8.sub⟩
+
+-- @[extern "lean_int8_complement"]
+def Int8.complement (a:Int8) : Int8 := 0-(a+1)
+instance : Complement Int8 := ⟨Int8.complement⟩
+
+/-- Returns the two's compliment negation of `a`. -/
+def Int8.neg (a : Int8) : Int8 := 0 - a
+instance : Neg Int8 := ⟨Int8.neg⟩
+
+/-- Returns the absolute value of `a` as an unsigned
+integer of the same bit width. -/
+def Int8.unsignedAbs (a : Int8) : UInt8 :=
+  if a.isNeg
+  then ⟨0 - a.val⟩
+  else ⟨a.val⟩
+
+/-- Returns the absolute value of `a`.
+
+Note that `Int8.minValue.abs == Int8.minValue` due
+to the two's compliment representation.
+-/
+def Int8.abs (a : Int8) : Int8 :=
+  if a.isNeg
+  then ⟨0 - a.val⟩
+  else a
+
+-- @[extern "lean_int8_mul"]
+def Int8.mul (a b : Int8) : Int8 := ⟨a.val * b.val⟩
+instance : Mul Int8       := ⟨Int8.mul⟩
+
+-- @[extern "lean_int8_div"]
+def Int8.div (a b : Int8) : Int8 :=
+  match a.isNeg, b.isNeg with
+  | true,  true => ⟨(-a).val / (-b).val⟩
+  | true,  false => -⟨(-a).val / b.val⟩
+  | false, true => -⟨a.val / (-b).val⟩
+  | false, false => ⟨a.val / b.val⟩
+instance : Div Int8 := ⟨Int8.div⟩
+
+-- @[extern "lean_int8_mod"]
+def Int8.mod (a b : Int8) : Int8 :=
+  match a.isNeg, b.isNeg with
+  | true,  true => -⟨(-a).val % (-b).val⟩
+  | true,  false => -⟨(-a).val % b.val⟩
+  | false, true => ⟨a.val % (-b).val⟩
+  | false, false => ⟨a.val % b.val⟩
+instance : Mod Int8 := ⟨Int8.mod⟩
+
+-- @[extern "lean_int8_modn"]
+def Int8.modn (a : Int8) (n : @& Nat) : Int8 :=
+  if a.isNeg
+  then -⟨Fin.modn (-a).val n⟩
+  else ⟨Fin.modn a.val n⟩
+instance : HMod Int8 Nat Int8 := ⟨Int8.modn⟩
+
+-- @[extern "lean_int8_land"]
+def Int8.land (a b : Int8) : Int8 := ⟨Fin.land a.val b.val⟩
+instance : AndOp Int8     := ⟨Int8.land⟩
+
+-- @[extern "lean_int8_lor"]
+def Int8.lor (a b : Int8) : Int8 := ⟨Fin.lor a.val b.val⟩
+instance : OrOp Int8      := ⟨Int8.lor⟩
+
+-- @[extern "lean_int8_xor"]
+def Int8.xor (a b : Int8) : Int8 := ⟨Fin.xor a.val b.val⟩
+instance : Xor Int8       := ⟨Int8.xor⟩
+
+-- @[extern "lean_int8_shift_left"]
+def Int8.shiftLeft (a b : Int8) : Int8 := ⟨a.val <<< (modn b 8).val⟩
+instance : ShiftLeft Int8  := ⟨Int8.shiftLeft⟩
+
+-- UInt8 ⟨a.val >>> (modn b 8).val⟩
+
+-- @[extern "lean_int8_shift_right"]
+def Int8.shiftRight (a b : Int8) : Int8 :=
+  if a.isNeg
+  then -⟨(-a).val >>> (modn b 8).val⟩
+  else ⟨a.val >>> (modn b 8).val⟩
+instance : ShiftRight Int8 := ⟨Int8.shiftRight⟩
+
+
+def Int8.lt (a b : Int8) : Prop :=
+  match a.isNeg, b.isNeg with
+  | true, true => b.val < a.val
+  | true, false => True
+  | false, true => False
+  | false, false => a.val < b.val
+instance : LT Int8 := ⟨Int8.lt⟩
+
+-- set_option bootstrap.genMatcherCode false in
+-- @[extern "lean_int8_dec_lt"]
+def Int8.decLt (a b : Int8) : Decidable (Int8.lt a b) := by
+  unfold Int8.lt
+  match ha : a.isNeg, hb : b.isNeg with
+  | true, true => exact inferInstanceAs (Decidable (b.val < a.val))
+  | true, false => exact inferInstanceAs (Decidable True)
+  | false, true => exact inferInstanceAs (Decidable False)
+  | false, false => exact inferInstanceAs (Decidable (a.val < b.val))
+instance (a b : Int8) : Decidable (Int8.lt a b) := Int8.decLt a b
+instance (a b : Int8) : Decidable (a < b) := Int8.decLt a b
+
+
+def Int8.le (a b : Int8) : Prop :=
+  match a.isNeg, b.isNeg with
+  | true, true => b.val ≤ a.val
+  | true, false => True
+  | false, true => False
+  | false, false => a.val ≤ b.val
+instance : LE Int8 := ⟨Int8.le⟩
+
+-- set_option bootstrap.genMatcherCode false in
+-- @[extern "lean_int8_dec_lt"]
+def Int8.decLe (a b : Int8) : Decidable (Int8.le a b) := by
+  unfold Int8.le
+  match ha : a.isNeg, hb : b.isNeg with
+  | true, true => exact inferInstanceAs (Decidable (b.val ≤ a.val))
+  | true, false => exact inferInstanceAs (Decidable True)
+  | false, true => exact inferInstanceAs (Decidable False)
+  | false, false => exact inferInstanceAs (Decidable (a.val ≤ b.val))
+instance (a b : Int8) : Decidable (Int8.le a b) := Int8.decLe a b
+instance (a b : Int8) : Decidable (a ≤ b) := Int8.decLe a b
+
+instance : Max Int8 := maxOfLe
+instance : Min Int8 := minOfLe
 
 /-- Return `a` as a `Int8`. Values outside
 the `Int8` range will wrap around to a corresponding value
@@ -62,196 +218,20 @@ def Int8.ofInt (a : Int) : Int8 :=
 /-- Return `a` as an unbound `Int`. -/
 def Int8.toInt (a : Int8) : Int :=
   if a.isNeg
-  then Int.negOfNat (Int8.size - a.toUInt8.toNat)
-  else Int.ofNat a.toUInt8.toNat
+  then Int.negOfNat (Int8.size - a.val.val)
+  else Int.ofNat a.val.val
 
 instance : ToString Int8 := ⟨fun i => toString i.toInt⟩
 
 /-- Equivalent to `Int8.ofInt`. -/
 abbrev Int.toInt8 := Int8.ofInt
 
-/-- Returns the absolute value of `a` as an unsigned
-integer of the same bit width. -/
-def Int8.unsignedAbs (a : Int8) : UInt8 :=
-  if a.isNeg
-  then 0 - a.toUInt8
-  else a.toUInt8
-
-/-- Returns the absolute value of `a`.
-
-Note that `Int8.minValue.abs == Int8.minValue` due
-to the two's compliment representation.
--/
-def Int8.abs (a : Int8) : Int8 := ⟨a.unsignedAbs⟩
-
-/-- Returns `a + b` per two's compliment arithmetic. -/
-def Int8.add (a b : Int8) : Int8 := ⟨UInt8.add a.toUInt8 b.toUInt8⟩
-instance : Add Int8 := ⟨Int8.add⟩
-
-/-- Returns `a - b` per two's compliment arithmetic. -/
-def Int8.sub (a b : Int8) : Int8 := ⟨UInt8.sub a.toUInt8 b.toUInt8⟩
-instance : Sub Int8 := ⟨Int8.sub⟩
-
-/-- Returns `a * b` per two's compliment arithmetic. -/
-def Int8.mul (a b : Int8) : Int8 := ⟨UInt8.mul a.toUInt8 b.toUInt8⟩
-instance : Mul Int8 := ⟨Int8.mul⟩
-
-/-- Returns `a / b` per two's compliment arithmetic. -/
--- @[extern "lean_int8_div"]
-def Int8.div (a b : Int8) : Int8 :=
-  match a.isNeg, b.isNeg with
-  | true,  true => ⟨(-a).toUInt8 / (-b).toUInt8⟩
-  | true,  false => -⟨(-a).toUInt8 / b.toUInt8⟩
-  | false, true => -⟨a.toUInt8 / (-b).toUInt8⟩
-  | false, false => ⟨a.toUInt8 / b.toUInt8⟩
-instance : Div Int8 := ⟨Int8.div⟩
-
-/-- Returns `a % b` per two's compliment arithmetic. -/
--- @[extern "lean_int8_mod"]
-def Int8.mod (a b : Int8) : Int8 :=
-  match a.isNeg, b.isNeg with
-  | true,  true => -⟨(-a).toUInt8 % (-b).toUInt8⟩
-  | true,  false => -⟨(-a).toUInt8 % b.toUInt8⟩
-  | false, true => ⟨a.toUInt8 % (-b).toUInt8⟩
-  | false, false => ⟨a.toUInt8 % b.toUInt8⟩
-instance : Mod Int8 := ⟨Int8.mod⟩
-
--- @[extern "lean_int8_modn"]
-def Int8.modn (a : Int8) (n : @& Nat) : Int8 :=
-  if a.isNeg
-  then -⟨UInt8.modn (-a).toUInt8 n⟩
-  else ⟨UInt8.modn a.toUInt8 n⟩
-instance : HMod Int8 Nat Int8 := ⟨Int8.modn⟩
-
-/-- Returns the bitwise AND of the arguments. -/
-def Int8.land (a b : Int8) : Int8 := ⟨UInt8.land a.toUInt8 b.toUInt8⟩
-instance : AndOp Int8 := ⟨Int8.land⟩
-
-/-- Returns the bitwise OR of the arguments. -/
-def Int8.lor (a b : Int8) : Int8 := ⟨UInt8.lor a.toUInt8 b.toUInt8⟩
-instance : OrOp Int8 := ⟨Int8.lor⟩
-
-/-- Returns the bitwise XOR of the arguments. -/
-def Int8.xor (a b : Int8) : Int8 := ⟨UInt8.xor a.toUInt8 b.toUInt8⟩
-instance : Xor Int8 := ⟨Int8.xor⟩
-
-/-- Returns `a` bitwise left shifted by `b` bits. -/
-def Int8.shiftLeft (a b : Int8) : Int8 := ⟨UInt8.shiftLeft a.toUInt8 b.toUInt8⟩
-instance : ShiftLeft Int8 := ⟨Int8.shiftLeft⟩
-
-/-- Returns `a` bitwise right shifted by `b` bits. The sign of the result
-matches the sign of `a`.-/
-def Int8.shiftRight (a b : Int8) : Int8 :=
-  if a.isNeg
-  then -⟨UInt8.shiftRight (-a).toUInt8 b.toUInt8⟩
-  else ⟨UInt8.shiftRight a.toUInt8 b.toUInt8⟩
-instance : ShiftRight Int8 := ⟨Int8.shiftRight⟩
-
-/-- `a` is less than `b`.-/
-abbrev Int8.lt (a b : Int8) : Prop :=
-  match a.isNeg, b.isNeg with
-  | true, true => b.toUInt8 < a.toUInt8
-  | true, false => True
-  | false, true => False
-  | false, false => a.toUInt8 < b.toUInt8
-instance : LT Int8 := ⟨Int8.lt⟩
-
--- set_option bootstrap.genMatcherCode false in
--- @[extern "lean_int8_dec_lt"]
-def Int8.decLt (a b : Int8) : Decidable (Int8.lt a b) := by
-  unfold Int8.lt
-  match ha : a.isNeg, hb : b.isNeg with
-  | true, true => exact inferInstanceAs (Decidable (b.toUInt8 < a.toUInt8))
-  | true, false => exact inferInstanceAs (Decidable True)
-  | false, true => exact inferInstanceAs (Decidable False)
-  | false, false => exact inferInstanceAs (Decidable (a.toUInt8 < b.toUInt8))
-instance (a b : Int8) : Decidable (Int8.lt a b) := Int8.decLt a b
-instance (a b : Int8) : Decidable (a < b) := Int8.decLt a b
-
-/-- `a` is less than or equal to `b`.-/
-def Int8.le (a b : Int8) : Prop :=
-  match a.isNeg, b.isNeg with
-  | true, true => b.toUInt8 ≤ a.toUInt8
-  | true, false => True
-  | false, true => False
-  | false, false => a.toUInt8 ≤ b.toUInt8
-instance : LE Int8 := ⟨Int8.le⟩
-
--- set_option bootstrap.genMatcherCode false in
--- @[extern "lean_int8_dec_lt"]
-def Int8.decLe (a b : Int8) : Decidable (Int8.le a b) := by
-  unfold Int8.le
-  match ha : a.isNeg, hb : b.isNeg with
-  | true, true => exact inferInstanceAs (Decidable (b.toUInt8 ≤ a.toUInt8))
-  | true, false => exact inferInstanceAs (Decidable True)
-  | false, true => exact inferInstanceAs (Decidable False)
-  | false, false => exact inferInstanceAs (Decidable (a.toUInt8 ≤ b.toUInt8))
-instance (a b : Int8) : Decidable (Int8.le a b) := Int8.decLe a b
-instance (a b : Int8) : Decidable (a ≤ b) := Int8.decLe a b
-
-instance : Max Int8 := maxOfLe
-instance : Min Int8 := minOfLe
-
-/-- Returns the log base 2 of `a` for `a ≥ 0`. -/
-def Int8.log2 (a : Int8) : Int8 := ⟨UInt8.log2 a.toUInt8⟩
-
--- @[extern "lean_int8_to_float"] opaque Int8.toFloat (a : Int8) : Float
-
-
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
--- Int16
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-
-/--
-The type of signed 16-bit two's compliment integers. This type is
-defined to use a UInt16 representation to make it actually 16 bits
-rather than wrapping an `Int`.
--/
-structure Int16 where
-  ofUInt16 ::
-  toUInt16 : UInt16
-  deriving DecidableEq, Inhabited, Hashable
-
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
--- Int32
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-
-/--
-The type of signed 32-bit two's compliment integers. This type is
-defined to use a UInt32 representation to make it actually 32 bits
-rather than wrapping an `Int`.
--/
-structure Int32 where
-  ofUInt32 ::
-  toUInt32 : UInt32
-  deriving DecidableEq, Inhabited, Hashable
-
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
--- Int64
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-
-/--
-The type of signed 64-bit two's compliment integers. This type is
-defined to use a UInt64 representation to make it actually 64 bits
-rather than wrapping an `Int`.
--/
-structure Int64 where
-  ofUInt64 ::
-  toUInt64 : UInt64
-  deriving DecidableEq, Inhabited, Hashable
-
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
--- Coercions
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-
-
--- @[extern "lean_int8_to_int16"]
--- def Int8.toInt16 (a : Int8) : Int16 := a.toInt.toInt16
--- @[extern "lean_int8_to_int32"]
--- def Int8.toInt32 (a : Int8) : Int32 := a.toInt.toInt32
--- @[extern "lean_int8_to_int64"]
--- def Int8.toInt64 (a : Int8) : Int64 := a.toInt.toInt64
-
+/--  Representation preserving cast from `UInt8` to `Int8` a la C. -/
+-- @[extern "lean_int8_to_uint8"]
+def Int8.toUInt8 (a : Int8) : UInt8 := ⟨a.val⟩
+/--  Representation preserving cast from `Int8` to `UInt8` a la C. -/
+-- @[extern "lean_uint8_to_int8"]
+def Int8.ofUInt8 (a : Int8) : Int8 := ⟨a.val⟩
 
 
 
